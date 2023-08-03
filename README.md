@@ -4,7 +4,7 @@ This directory and its sub-directories contain the source code for a customized 
 We modified ThreadSanitizer (compiler-rt/lib/tsan) to implement a prototype of our data inconsistency detector.
 In addition, we also implemented all OpenMP Tool interface (OMPT) callbacks for OpenMP device offloading according to the 5.2 version specification.
 
-Note: this prototype only support the x86-64 architecture
+Note: this prototype only supports the x86-64 architecture
 
 ## How to install Arbalest
 
@@ -12,11 +12,14 @@ We have provided a bash script to help you install Arbalest.
 
 ```c
 install_arbalest.sh [BUILD_DIR] [INSTALL_DIR]
+
+// [BUILD_DIR]: the directory where cmake & ninja compile the source code
+// [INSTALL_DIR]: the directory where the customized LLVM will be installed
 ```
 
 ## How to use Arbalest
-We will use the following example to show how to use Arbalest  
-```
+We will use the following example (example.cpp) to show how to use Arbalest  
+```c
      1	#include <cstdio>
      2	#define N 1000
      3
@@ -45,6 +48,9 @@ We will use the following example to show how to use Arbalest
 ```
 
 ### Arbalest's Output
+
+Note: The line numbers in the Arbalest report may experience slight discrepancies, either shifting up or down. The underlying issue lies in ThreadSanitizer's inability to accurately retrieve every line number when OpenMP is enabled. We are actively working on resolving this issue to ensure accurate line numbers in the report.
+
 ```c
 arbalest successfully starts 
 LLVMSymbolizer: error reading file: No such file or directory
@@ -74,7 +80,6 @@ WARNING: ThreadSanitizer: data mapping issue (uninitialized access) (pid=15148) 
 
 SUMMARY: ThreadSanitizer: data mapping issue (uninitialized access) /home/lyu/Test/example.cpp:8:14 in .omp_outlined._debug__
 ==================
-insert map from 0x7ffc94e4a3f0, 0x7b8000002000, 4000
 a[3] = 1114118
 ThreadSanitizer: reported 2 warnings
 ```
