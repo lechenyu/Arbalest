@@ -1,122 +1,82 @@
-# The LLVM Compiler Infrastructure
+# Arbalest - Dynamic Data Inconsistency Detector for OpenMP programs
 
-This directory and its sub-directories contain the source code for LLVM,
-a toolkit for the construction of highly optimized compilers,
-optimizers, and run-time environments.
+This directory and its sub-directories contain the source code for a customized LLVM 15.
+We modified ThreadSanitizer (compiler-rt/lib/tsan) to implement a prototype of our data inconsistency detector.
+In addition, we also implemented all OpenMP Tool interface (OMPT) callbacks for OpenMP device offloading according to the 5.2 version specification.
 
-The README briefly describes how to get started with building LLVM.
-For more information on how to contribute to the LLVM project, please
-take a look at the
-[Contributing to LLVM](https://llvm.org/docs/Contributing.html) guide.
+Note: this prototype only support the x86-64 architecture
 
-## Getting Started with the LLVM System
+## How to install Arbalest
 
-Taken from [here](https://llvm.org/docs/GettingStarted.html).
+We have provided a bash script to help you install Arbalest.  
 
-### Overview
+```c
+install_arbalest.sh [BUILD_DIR] [INSTALL_DIR]
+```
 
-Welcome to the LLVM project!
+## How to use Arbalest
+We will use the following example to show how to use Arbalest  
+```
+     1	#include <cstdio>
+     2	#define N 1000
+     3
+     4	int main() {
+     5	    int a[N];
+     6	    #pragma omp target teams distribute map(from: a[0:N]) // map-type should be "tofrom"
+     7	    for (int i = 0; i < N; i++) {
+     8	        a[i] += i;                                 // read uninitialized value from a[i]
+     9	    }
+    10
+    11	    printf("a[%d] = %d\n", 3, a[3]);
+    12	    return 0;
+    13	}
 
-The LLVM project has multiple components. The core of the project is
-itself called "LLVM". This contains all of the tools, libraries, and header
-files needed to process intermediate representations and convert them into
-object files. Tools include an assembler, disassembler, bitcode analyzer, and
-bitcode optimizer. It also contains basic regression tests.
+```
 
-C-like languages use the [Clang](http://clang.llvm.org/) frontend. This
-component compiles C, C++, Objective-C, and Objective-C++ code into LLVM bitcode
--- and from there into object files, using LLVM.
+### Compile the OpenMP program with OpenMP and ThreadSanitizer enabled
+```c
+   clang++ -fopenmp -fopenmp-targets=x86_64-pc-linux-gnu -fsanitize=thread -g -o example.exe example.cpp
+```
 
-Other components include:
-the [libc++ C++ standard library](https://libcxx.llvm.org),
-the [LLD linker](https://lld.llvm.org), and more.
+### Execute the OpenMP program
+```c
+   export TSAN_OPTIONS='ignore_noninstrumented_modules=1' // this option is needed to avoid false positives
+   ./example.exe
+```
 
-### Getting the Source Code and Building LLVM
+### Arbalest's Output
+```c
+arbalest successfully starts 
+LLVMSymbolizer: error reading file: No such file or directory
+==================
+WARNING: ThreadSanitizer: data mapping issue (uninitialized access) (pid=15148) on the target 
+  Read of size 4 at 0x7ffc94e4a3f0 by main thread:
+    #0 .omp_outlined._debug__ /home/lyu/Test/example.cpp:7:5 (tmpfile_KSsVh6+0x9b9)
+    #1 .omp_outlined. /home/lyu/Test/example.cpp:6:5 (tmpfile_KSsVh6+0xc04)
+    #2 __kmp_invoke_microtask <null> (libomp.so+0xb9202)
 
-The LLVM Getting Started documentation may be out of date. The [Clang
-Getting Started](http://clang.llvm.org/get_started.html) page might have more
-accurate information.
+  Location is stack of main thread.
 
-This is an example work-flow and configuration to get and build the LLVM source:
+  Location is global '??' at 0x7ffc94e2c000 ([stack]+0x1e3f0)
 
-1. Checkout LLVM (including related sub-projects like Clang):
+SUMMARY: ThreadSanitizer: data mapping issue (uninitialized access) /home/lyu/Test/example.cpp:7:5 in .omp_outlined._debug__
+==================
+==================
+WARNING: ThreadSanitizer: data mapping issue (uninitialized access) (pid=15148) on the target 
+  Read of size 4 at 0x7ffc94e4a3f8 by main thread:
+    #0 .omp_outlined._debug__ /home/lyu/Test/example.cpp:8:14 (tmpfile_KSsVh6+0xb04)
+    #1 .omp_outlined. /home/lyu/Test/example.cpp:6:5 (tmpfile_KSsVh6+0xc04)
+    #2 __kmp_invoke_microtask <null> (libomp.so+0xb9202)
 
-     * ``git clone https://github.com/llvm/llvm-project.git``
+  Location is stack of main thread.
 
-     * Or, on windows, ``git clone --config core.autocrlf=false
-    https://github.com/llvm/llvm-project.git``
+  Location is global '??' at 0x7ffc94e2c000 ([stack]+0x1e3f8)
 
-2. Configure and build LLVM and Clang:
+SUMMARY: ThreadSanitizer: data mapping issue (uninitialized access) /home/lyu/Test/example.cpp:8:14 in .omp_outlined._debug__
+==================
+insert map from 0x7ffc94e4a3f0, 0x7b8000002000, 4000
+a[3] = 1114118
+ThreadSanitizer: reported 2 warnings
+```
 
-     * ``cd llvm-project``
 
-     * ``cmake -S llvm -B build -G <generator> [options]``
-
-        Some common build system generators are:
-
-        * ``Ninja`` --- for generating [Ninja](https://ninja-build.org)
-          build files. Most llvm developers use Ninja.
-        * ``Unix Makefiles`` --- for generating make-compatible parallel makefiles.
-        * ``Visual Studio`` --- for generating Visual Studio projects and
-          solutions.
-        * ``Xcode`` --- for generating Xcode projects.
-
-        Some common options:
-
-        * ``-DLLVM_ENABLE_PROJECTS='...'`` and ``-DLLVM_ENABLE_RUNTIMES='...'`` ---
-          semicolon-separated list of the LLVM sub-projects and runtimes you'd like to
-          additionally build. ``LLVM_ENABLE_PROJECTS`` can include any of: clang,
-          clang-tools-extra, cross-project-tests, flang, libc, libclc, lld, lldb,
-          mlir, openmp, polly, or pstl. ``LLVM_ENABLE_RUNTIMES`` can include any of
-          libcxx, libcxxabi, libunwind, compiler-rt, libc or openmp. Some runtime
-          projects can be specified either in ``LLVM_ENABLE_PROJECTS`` or in
-          ``LLVM_ENABLE_RUNTIMES``.
-
-          For example, to build LLVM, Clang, libcxx, and libcxxabi, use
-          ``-DLLVM_ENABLE_PROJECTS="clang" -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi"``.
-
-        * ``-DCMAKE_INSTALL_PREFIX=directory`` --- Specify for *directory* the full
-          path name of where you want the LLVM tools and libraries to be installed
-          (default ``/usr/local``). Be careful if you install runtime libraries: if
-          your system uses those provided by LLVM (like libc++ or libc++abi), you
-          must not overwrite your system's copy of those libraries, since that
-          could render your system unusable. In general, using something like
-          ``/usr`` is not advised, but ``/usr/local`` is fine.
-
-        * ``-DCMAKE_BUILD_TYPE=type`` --- Valid options for *type* are Debug,
-          Release, RelWithDebInfo, and MinSizeRel. Default is Debug.
-
-        * ``-DLLVM_ENABLE_ASSERTIONS=On`` --- Compile with assertion checks enabled
-          (default is Yes for Debug builds, No for all other build types).
-
-      * ``cmake --build build [-- [options] <target>]`` or your build system specified above
-        directly.
-
-        * The default target (i.e. ``ninja`` or ``make``) will build all of LLVM.
-
-        * The ``check-all`` target (i.e. ``ninja check-all``) will run the
-          regression tests to ensure everything is in working order.
-
-        * CMake will generate targets for each tool and library, and most
-          LLVM sub-projects generate their own ``check-<project>`` target.
-
-        * Running a serial build will be **slow**. To improve speed, try running a
-          parallel build. That's done by default in Ninja; for ``make``, use the option
-          ``-j NNN``, where ``NNN`` is the number of parallel jobs to run.
-          In most cases, you get the best performance if you specify the number of CPU threads you have.
-          On some Unix systems, you can specify this with ``-j$(nproc)``.
-
-      * For more information see [CMake](https://llvm.org/docs/CMake.html).
-
-Consult the
-[Getting Started with LLVM](https://llvm.org/docs/GettingStarted.html#getting-started-with-llvm)
-page for detailed information on configuring and compiling LLVM. You can visit
-[Directory Layout](https://llvm.org/docs/GettingStarted.html#directory-layout)
-to learn about the layout of the source code tree.
-
-## Getting in touch
-
-Join [LLVM Discourse forums](https://discourse.llvm.org/), [discord chat](https://discord.gg/xS7Z362) or #llvm IRC channel on [OFTC](https://oftc.net/).
-
-The LLVM project has adopted a [code of conduct](https://llvm.org/docs/CodeOfConduct.html) for
-participants to all modes of communication within the project.
